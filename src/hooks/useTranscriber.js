@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadEngineFactory } from '../engines/index.js';
+import { applyText } from '../lib/transcriptText.js';
 
 /**
  * Drives one speech-to-text engine and keeps the running transcript.
  *
  * status: idle → (loading) → connecting → listening → stopping → idle
  * Engines report text through:
- *   onText(text, { raw, newTurn })  committed text (raw = append-only deltas)
+ *   onText(text)                    committed text, starts a new segment
+ *   onText(text, { replace: true }) a newer version of the last segment
+ *                                   (Gemini re-sends the whole turn at each pause)
+ *   onText(text, { raw, newTurn })  append-only deltas (raw = no spacing changes)
  *   onInterim(text)                 provisional text for the current phrase
+ *
+ * The transcript lives in a ref (the source of truth for engine callbacks) and
+ * is mirrored to state for rendering, so updates stay pure under StrictMode.
  *
  * Performance: the microphone level (10×/s) and the running clock are NOT React
  * state. Levels go through a tiny pub/sub that components paint directly, and
@@ -17,7 +24,7 @@ import { loadEngineFactory } from '../engines/index.js';
 export function useTranscriber() {
   const [status, setStatus] = useState('idle');
   const [statusDetail, setStatusDetail] = useState('');
-  const [transcript, setTranscript] = useState('');
+  const [transcript, setTranscriptState] = useState('');
   const [interim, setInterim] = useState('');
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState(null);
@@ -25,8 +32,12 @@ export function useTranscriber() {
   const [enginesUsed, setEnginesUsed] = useState([]);
   const [lastMeta, setLastMeta] = useState({});
   const [speaking, setSpeaking] = useState(false);
+  const [micIssue, setMicIssue] = useState(null); // null | 'no-audio' | 'silent' | 'ended'
+  const [warning, setWarning] = useState(null); // engine-specific hint (e.g. Gemini returns no text)
 
   const engineRef = useRef(null);
+  const textRef = useRef('');
+  const segmentStartRef = useRef(-1); // where the revisable last segment starts (-1: none)
   const timingRef = useRef({ accumulatedMs: 0, since: 0 });
   const levelListeners = useRef(new Set());
   const voice = useRef({ on: false, lastVoiceAt: 0 });
@@ -50,19 +61,30 @@ export function useTranscriber() {
     setTiming(next);
   }, []);
 
-  const appendText = useCallback((text, { raw = false, newTurn = false } = {}) => {
-    if (!text) return;
-    setTranscript((prev) => {
-      if (raw) {
-        if (!prev) return text.trimStart();
-        const needsSpace = newTurn && !/\s$/u.test(prev) && !/^\s/u.test(text);
-        return `${prev}${needsSpace ? ' ' : ''}${text}`;
-      }
-      const clean = text.replace(/\s+/gu, ' ').trim();
-      if (!clean) return prev;
-      return prev ? `${prev.replace(/\s+$/u, '')} ${clean}` : clean;
-    });
+  const writeTranscript = useCallback((next) => {
+    textRef.current = next;
+    setTranscriptState(next);
   }, []);
+
+  /** Manual edits (and reset): the old segment can no longer be revised. */
+  const setTranscript = useCallback(
+    (next) => {
+      segmentStartRef.current = -1;
+      writeTranscript(typeof next === 'function' ? next(textRef.current) : next);
+    },
+    [writeTranscript],
+  );
+
+  const appendText = useCallback(
+    (text, opts) => {
+      const current = { text: textRef.current, segmentStart: segmentStartRef.current };
+      const next = applyText(current, text, opts);
+      if (next === current) return;
+      segmentStartRef.current = next.segmentStart;
+      if (next.text !== current.text) writeTranscript(next.text);
+    },
+    [writeTranscript],
+  );
 
   const handleStatus = useCallback(
     (next, detail = '') => {
@@ -76,6 +98,8 @@ export function useTranscriber() {
         engineRef.current = null;
         voice.current.on = false;
         setSpeaking(false);
+        setMicIssue(null);
+        setWarning(null);
         emitLevel(0);
         setInterim('');
         setProgress(null);
@@ -93,7 +117,7 @@ export function useTranscriber() {
       emitLevel(Math.min(1, Math.sqrt(rms) * 2.4));
       const now = Date.now();
       const state = voice.current;
-      if (rms > 0.014) {
+      if (rms > 0.008) {
         state.lastVoiceAt = now;
         if (!state.on) {
           state.on = true;
@@ -110,7 +134,10 @@ export function useTranscriber() {
   const start = useCallback(
     async (engineId, options = {}) => {
       if (engineRef.current) return;
+      segmentStartRef.current = -1; // a new recording never rewrites earlier text
       setError(null);
+      setMicIssue(null);
+      setWarning(null);
       setStatus('connecting');
       setStatusDetail('Preparing…');
       try {
@@ -122,6 +149,8 @@ export function useTranscriber() {
             onInterim: setInterim,
             onLevel: handleLevel,
             onProgress: setProgress,
+            onMicIssue: setMicIssue,
+            onWarning: setWarning,
             onError: (err) => setError(err?.message || String(err)),
           },
           options,
@@ -159,7 +188,7 @@ export function useTranscriber() {
     setEnginesUsed([]);
     setLastMeta({});
     updateTiming({ accumulatedMs: 0, since: 0 });
-  }, [updateTiming]);
+  }, [setTranscript, updateTiming]);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -178,6 +207,8 @@ export function useTranscriber() {
       isActive: status !== 'idle',
       isListening: status === 'listening',
       speaking,
+      micIssue,
+      warning,
       transcript,
       setTranscript,
       interim,
@@ -197,7 +228,10 @@ export function useTranscriber() {
       status,
       statusDetail,
       speaking,
+      micIssue,
+      warning,
       transcript,
+      setTranscript,
       interim,
       error,
       clearError,

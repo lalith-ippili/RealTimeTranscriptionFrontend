@@ -21,6 +21,7 @@ export function ApiStatusProvider({ children }) {
     database: false,
     dbHint: null,
     gemini: false,
+    relay: false,
     model: null,
   });
   const runId = useRef(0);
@@ -44,6 +45,7 @@ export function ApiStatusProvider({ children }) {
             database: dbUp,
             dbHint: dbUp ? null : health?.database?.hint || null,
             gemini: Boolean(health?.engines?.geminiLive?.available),
+            relay: Boolean(health?.engines?.geminiLive?.relay),
             model: health?.engines?.geminiLive?.model || null,
           });
           return;
@@ -54,7 +56,7 @@ export function ApiStatusProvider({ children }) {
         }
       }
       if (runId.current === id) {
-        setState({ phase: 'offline', database: false, dbHint: null, gemini: false, model: null });
+        setState({ phase: 'offline', database: false, dbHint: null, gemini: false, relay: false, model: null });
       }
     } finally {
       clearTimeout(wakeTimer);

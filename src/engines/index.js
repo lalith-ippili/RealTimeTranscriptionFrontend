@@ -38,4 +38,4 @@ export async function loadEngineFactory(id) {
 export const isWebSpeechSupported = () =>
   typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
 
-export { WEB_SPEECH_LANGUAGES, WHISPER_LANGUAGES, WHISPER_MODELS } from './options.js';
+export { SPOKEN_LANGUAGES, WHISPER_MODELS, engineLanguageOptions, languageHint } from './options.js';

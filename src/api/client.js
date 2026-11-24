@@ -8,6 +8,12 @@ export const API_URL = (import.meta.env.VITE_API_URL || DEFAULT_API).replace(/\/
 
 const DEFAULT_TIMEOUT_MS = 45_000;
 
+/** WebSocket URL of the server-side Gemini relay. */
+export const liveRelayUrl = (params = {}) => {
+  const query = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+  return `${API_URL.replace(/^http/, 'ws')}/api/live/stream${query ? `?${query}` : ''}`;
+};
+
 export class ApiError extends Error {
   constructor(message, status, details, data) {
     super(message);

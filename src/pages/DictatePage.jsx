@@ -7,12 +7,14 @@ import { useToast } from '../context/ToastContext.jsx';
 import { useTranscriber } from '../hooks/useTranscriber.js';
 import {
   ENGINES,
-  WEB_SPEECH_LANGUAGES,
-  WHISPER_LANGUAGES,
+  SPOKEN_LANGUAGES,
   WHISPER_MODELS,
+  engineLanguageOptions,
   isWebSpeechSupported,
+  languageHint,
 } from '../engines/index.js';
 import EnginePicker from '../components/EnginePicker.jsx';
+import MicPicker from '../components/MicPicker.jsx';
 import LevelMeter from '../components/LevelMeter.jsx';
 import MixBar from '../components/MixBar.jsx';
 import RecordButton from '../components/RecordButton.jsx';
@@ -21,6 +23,7 @@ import ScriptText from '../components/ScriptText.jsx';
 import SpeakButton from '../components/SpeakButton.jsx';
 import VoicePicker from '../components/VoicePicker.jsx';
 import { countWords } from '../lib/script.js';
+import { MIC_ISSUES, primeAudio } from '../lib/microphone.js';
 
 const EXAMPLE = 'कल की meeting को चार बजे reschedule कर दो, और client को email भेज देना।';
 
@@ -55,8 +58,8 @@ export default function DictatePage() {
 
   const [engine, setEngine] = useState(() => readPref('engine', 'gemini-live'));
   const [whisperModel, setWhisperModel] = useState(() => readPref('whisperModel', WHISPER_MODELS[1].id));
-  const [whisperLanguage, setWhisperLanguage] = useState(() => readPref('whisperLanguage', ''));
-  const [browserLanguage, setBrowserLanguage] = useState(() => readPref('browserLanguage', 'hi-IN'));
+  const [language, setLanguage] = useState(() => readPref('language', 'mixed'));
+  const [micDevice, setMicDevice] = useState(() => readPref('micDevice', ''));
 
   const [title, setTitle] = useState('');
   const [editing, setEditing] = useState(false);
@@ -105,15 +108,15 @@ export default function DictatePage() {
       stop();
       return;
     }
+    // Must run synchronously inside the click: browsers only let audio start
+    // from a user gesture.
+    primeAudio();
     setEditing(false);
-    const options =
-      engine === 'whisper'
-        ? { model: whisperModel, language: whisperLanguage }
-        : engine === 'web-speech'
-          ? { language: browserLanguage }
-          : {};
+    const options = { ...engineLanguageOptions(engine, language), deviceId: micDevice };
+    if (engine === 'whisper') options.model = whisperModel;
+    if (engine === 'gemini-live') options.relay = apiStatus.relay;
     start(engine, options);
-  }, [isActive, start, stop, engine, whisperModel, whisperLanguage, browserLanguage]);
+  }, [isActive, start, stop, engine, whisperModel, language, micDevice, apiStatus.relay]);
 
   const save = async () => {
     const content = stt.transcript.trim();
@@ -174,6 +177,28 @@ export default function DictatePage() {
             Speak Hindi, English, or both.
           </h1>
           <p className="page-lede">Words appear on the pad as you talk. Save them, edit them, or listen back.</p>
+          <div className="lang">
+            <div className="lang__switch" role="radiogroup" aria-label="Language you will speak">
+              {SPOKEN_LANGUAGES.map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={language === l.id}
+                  className={`lang__option${language === l.id ? ' lang__option--on' : ''}`}
+                  title={l.title}
+                  disabled={stt.isActive}
+                  onClick={() => {
+                    setLanguage(l.id);
+                    writePref('language', l.id);
+                  }}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+            <p className="lang__hint">{languageHint(engine, language)}</p>
+          </div>
         </header>
 
         <article className={`sheet${stt.isListening ? ' sheet--live' : ''}`}>
@@ -264,6 +289,14 @@ export default function DictatePage() {
               {stt.status === 'loading' && (
                 <progress className="progress" max={100} value={loadingPercent ?? undefined} />
               )}
+              {stt.isListening && stt.lastMeta.mic && !stt.micIssue && (
+                <p className="recorder__mic">Mic: {stt.lastMeta.mic}</p>
+              )}
+              {stt.isActive && (stt.micIssue || stt.warning) && (
+                <p className="recorder__warning" role="alert">
+                  {stt.micIssue ? MIC_ISSUES[stt.micIssue] : stt.warning}
+                </p>
+              )}
             </div>
           </div>
 
@@ -312,7 +345,35 @@ export default function DictatePage() {
         {stt.error && (
           <div className="alert" role="alert">
             <CircleAlert size={20} aria-hidden="true" />
-            <p>{stt.error}</p>
+            <div className="alert__body">
+              <p>{stt.error}</p>
+              {!stt.isActive && (
+                <div className="alert__actions">
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--small"
+                    onClick={() => {
+                      stt.clearError();
+                      toggleRecording();
+                    }}
+                  >
+                    Try again
+                  </button>
+                  {engine !== 'web-speech' && !unavailable['web-speech'] && (
+                    <button
+                      type="button"
+                      className="btn btn--primary btn--small"
+                      onClick={() => {
+                        stt.clearError();
+                        chooseEngine('web-speech');
+                      }}
+                    >
+                      Use the Browser engine
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <button type="button" className="icon-btn icon-btn--small" aria-label="Dismiss" onClick={stt.clearError}>
               <X size={16} aria-hidden="true" />
             </button>
@@ -326,7 +387,10 @@ export default function DictatePage() {
         {engine === 'gemini-live' && apiStatus.model && (
           <p className="field__hint">
             Model: <code>{stt.lastMeta.engine === 'gemini-live' && stt.lastMeta.model ? stt.lastMeta.model : apiStatus.model}</code>
-            . Audio goes straight to Google using a short-lived token from your server.
+            .{' '}
+            {apiStatus.relay
+              ? 'Audio is streamed through your server, which talks to Google with your API key.'
+              : 'Audio goes straight to Google using a short-lived token from your server.'}
           </p>
         )}
 
@@ -352,53 +416,19 @@ export default function DictatePage() {
                 ))}
               </select>
             </div>
-            <div className="field">
-              <label className="panel__title" htmlFor="whisper-language">
-                Spoken language
-              </label>
-              <select
-                id="whisper-language"
-                value={whisperLanguage}
-                disabled={stt.isActive}
-                onChange={(e) => {
-                  setWhisperLanguage(e.target.value);
-                  writePref('whisperLanguage', e.target.value);
-                }}
-              >
-                {WHISPER_LANGUAGES.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.label}
-                  </option>
-                ))}
-              </select>
-              <p className="field__hint">Detected per phrase. Choose Hindi if mixed speech comes out translated.</p>
-            </div>
           </div>
         )}
 
-        {engine === 'web-speech' && (
-          <div className="field">
-            <label className="panel__title" htmlFor="browser-language">
-              Recognition language
-            </label>
-            <select
-              id="browser-language"
-              value={browserLanguage}
-              disabled={stt.isActive}
-              onChange={(e) => {
-                setBrowserLanguage(e.target.value);
-                writePref('browserLanguage', e.target.value);
-              }}
-            >
-              {WEB_SPEECH_LANGUAGES.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-            <p className="field__hint">Hindi (hi-IN) also picks up English words spoken in between.</p>
-          </div>
-        )}
+        <MicPicker
+          value={micDevice}
+          disabled={stt.isActive}
+          refreshKey={stt.status}
+          note={engine === 'web-speech' ? 'The Browser engine always uses the system default microphone.' : null}
+          onChange={(id) => {
+            setMicDevice(id);
+            writePref('micDevice', id);
+          }}
+        />
 
         <VoicePicker />
       </aside>

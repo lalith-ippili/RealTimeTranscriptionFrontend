@@ -4,34 +4,54 @@
  * `interimInputTranscription` – reaches us untouched).
  *
  * Authenticates with a single-use ephemeral token from our backend.
+ *
+ * Readiness: like Google's SDK, we do NOT require `setupComplete` before
+ * streaming (some models only send it once audio arrives). The session counts
+ * as ready when `setupComplete` arrives, when the first server message
+ * arrives, or when the socket stays open for a short grace period after the
+ * setup message – whichever comes first. A close inside that window is a
+ * failed attempt, so the caller can try the next model / API version.
  */
 
 const WS_HOST = 'wss://generativelanguage.googleapis.com';
 const decoder = new TextDecoder();
 
+export const liveLog = (...args) => console.info('[Bolo · Gemini]', ...args);
+
 const describeClose = (event) => {
   const reason = event?.reason?.trim();
   if (reason) return reason;
-  if (event?.code === 1006) return 'the connection was dropped (network or firewall)';
+  if (event?.code === 1006) return 'the connection was dropped (network, firewall or an invalid token)';
   return `the connection closed (code ${event?.code ?? 'unknown'})`;
 };
 
 /**
- * Opens a Live session and resolves once Gemini confirms the setup.
- *
  * @param {object} options
- * @param {string} options.token        ephemeral token ("auth_tokens/…")
- * @param {string} options.apiVersion   'v1beta' | 'v1alpha'
+ * @param {string} [options.url]        full WebSocket URL (our server relay)
+ * @param {string} [options.token]      ephemeral token ("auth_tokens/…") for a direct connection
+ * @param {string} [options.apiVersion] 'v1beta' | 'v1alpha' (direct connection)
  * @param {object} options.setup        BidiGenerateContentSetup (wire format)
  * @param {(msg: object) => void} options.onMessage
  * @param {(info: { code: number, reason: string }) => void} [options.onClose]
- * @param {number} [options.timeoutMs]
+ * @param {number} [options.openTimeoutMs]  max wait for the socket to open
+ * @param {number} [options.graceMs]        open + quiet this long → ready
  */
-export function connectLive({ token, apiVersion, setup, onMessage, onClose, timeoutMs = 12_000 }) {
+export function connectLive({
+  url: relayUrl,
+  token,
+  apiVersion,
+  setup,
+  onMessage,
+  onClose,
+  openTimeoutMs = 6_000,
+  graceMs = 1_200,
+}) {
   return new Promise((resolve, reject) => {
     const url =
+      relayUrl ||
       `${WS_HOST}/ws/google.ai.generativelanguage.${apiVersion}` +
-      `.GenerativeService.BidiGenerateContentConstrained?access_token=${token}`;
+        `.GenerativeService.BidiGenerateContentConstrained?access_token=${token}`;
+    const label = relayUrl ? 'relay' : apiVersion;
 
     let ws;
     try {
@@ -42,22 +62,14 @@ export function connectLive({ token, apiVersion, setup, onMessage, onClose, time
     }
     ws.binaryType = 'arraybuffer'; // decode synchronously → messages stay in order
 
-    let ready = false;
     let settled = false;
-    const fail = (message) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try {
-        ws.close();
-      } catch {
-        /* already closed */
-      }
-      reject(new Error(message));
-    };
-    const timer = setTimeout(() => fail('Gemini Live did not respond in time'), timeoutMs);
+    let graceTimer = 0;
+    const openTimer = setTimeout(() => fail('Gemini did not answer (connection timed out)'), openTimeoutMs);
 
     const session = {
+      info: null, // { model, mode } announced by our relay
+      confirmed: false, // setupComplete received
+      gotContent: false, // any transcript/server content received
       get isOpen() {
         return ws.readyState === WebSocket.OPEN;
       },
@@ -79,7 +91,33 @@ export function connectLive({ token, apiVersion, setup, onMessage, onClose, time
       },
     };
 
-    ws.onopen = () => ws.send(JSON.stringify({ setup }));
+    function fail(message) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(openTimer);
+      clearTimeout(graceTimer);
+      try {
+        ws.close();
+      } catch {
+        /* already closed */
+      }
+      reject(new Error(message));
+    }
+
+    const succeed = (why) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(openTimer);
+      clearTimeout(graceTimer);
+      liveLog(`session ready (${why}) – ${session.info?.model || setup.model}, ${label}`);
+      resolve(session);
+    };
+
+    ws.onopen = () => {
+      clearTimeout(openTimer);
+      ws.send(JSON.stringify({ setup }));
+      graceTimer = setTimeout(() => succeed('socket open, no error'), graceMs);
+    };
 
     ws.onmessage = (event) => {
       let message;
@@ -88,15 +126,17 @@ export function connectLive({ token, apiVersion, setup, onMessage, onClose, time
       } catch {
         return;
       }
-      if (!ready) {
-        if (message.setupComplete) {
-          ready = true;
-          settled = true;
-          clearTimeout(timer);
-          resolve(session);
-        }
+      if (message.relay) {
+        session.info = message.relay; // our relay says which model it uses
         return;
       }
+      if (message.setupComplete) {
+        session.confirmed = true;
+        succeed('setupComplete');
+        return;
+      }
+      if (message.serverContent) session.gotContent = true;
+      succeed('first message');
       onMessage(message);
     };
 
@@ -105,8 +145,14 @@ export function connectLive({ token, apiVersion, setup, onMessage, onClose, time
     };
 
     ws.onclose = (event) => {
-      if (!ready) fail(describeClose(event));
-      else onClose?.({ code: event.code, reason: describeClose(event) });
+      const reason = describeClose(event);
+      if (!settled) {
+        liveLog(`connection refused – ${session.info?.model || setup.model}, ${label}: ${reason}`);
+        fail(reason);
+      } else {
+        liveLog(`connection closed (${event.code}): ${reason}`);
+        onClose?.({ code: event.code, reason });
+      }
     };
   });
 }

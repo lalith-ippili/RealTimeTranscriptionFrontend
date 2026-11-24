@@ -120,7 +120,7 @@ const cleanText = (text = '') =>
 const isMeaningful = (text) => /[\p{L}\p{N}]/u.test(text);
 
 export function createWhisperEngine(callbacks, options = {}) {
-  const { onStatus, onText, onInterim, onLevel, onError, onProgress } = callbacks;
+  const { onStatus, onText, onInterim, onLevel, onError, onProgress, onMicIssue } = callbacks;
   const model = options.model || WHISPER_MODELS[1].id;
   const language = options.language || '';
 
@@ -246,9 +246,11 @@ export function createWhisperEngine(callbacks, options = {}) {
     }
   };
 
+  const meta = { model, language: language || 'auto' };
+
   return {
     id: 'whisper',
-    meta: { model, language: language || 'auto' },
+    meta,
 
     async start() {
       cancelled = false;
@@ -260,6 +262,8 @@ export function createWhisperEngine(callbacks, options = {}) {
       if (cancelled) return;
       onStatus('connecting', 'Opening the microphone…');
       const opened = await openMicrophone({
+        onIssue: onMicIssue,
+        deviceId: options.deviceId,
         onLevel,
         onChunk: (samples) => {
           let sum = 0;
@@ -272,6 +276,7 @@ export function createWhisperEngine(callbacks, options = {}) {
         return;
       }
       mic = opened;
+      meta.mic = opened.label;
       running = true;
       onStatus('listening');
     },
