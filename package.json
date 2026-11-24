@@ -1,0 +1,23 @@
+{
+  "name": "speech-to-text-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Bolo – real-time multilingual (Hindi + English) speech-to-text web app",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.2",
+    "lucide-react": "^1.79.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.6"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.3.0",
+    "vite": "^8.3.8"
+  }
+}
