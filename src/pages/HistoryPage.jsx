@@ -262,10 +262,10 @@ export default function HistoryPage() {
       ) : isEmptyLibrary ? (
         <div className="empty">
           <h2>Nothing saved yet</h2>
-          <p>Dictate something and press Save to keep it here, or type one in by hand.</p>
+          <p>Dictate something and press Save to keep it here, or type one in by hand!</p>
           <div className="empty__actions">
             <Link to="/" className="btn btn--primary">
-              Start dictating
+              Start dictating!
             </Link>
             <button type="button" className="btn btn--ghost" onClick={() => setForm({ item: null })}>
               Type one in

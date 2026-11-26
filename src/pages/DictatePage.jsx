@@ -200,7 +200,7 @@ export default function DictatePage() {
       <section className="dictate__main" aria-labelledby="dictate-title">
         <header className="page-head">
           <h1 id="dictate-title" className="page-title">
-            Speak Hindi, English, or both.
+            Speak Hindi, English, or Any
           </h1>
           <p className="page-lede">Words appear on the pad as you talk. Save them, edit them, or listen back.</p>
           <div className="lang">
