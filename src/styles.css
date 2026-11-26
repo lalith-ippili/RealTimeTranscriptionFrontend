@@ -1701,6 +1701,61 @@ input.sheet__title:focus-visible {
   font-weight: 500;
 }
 
+/* Audio recording saved with a transcription */
+.recording {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-m);
+}
+.recording__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  font-size: var(--step--1);
+}
+.recording__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.recording__title svg {
+  color: var(--latin);
+}
+.recording__meta {
+  color: var(--muted);
+}
+.recording__player {
+  width: 100%;
+  height: 40px;
+}
+.recording__download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  justify-self: start;
+  font-size: var(--step--1);
+  font-weight: 500;
+  color: var(--latin);
+  text-decoration: none;
+}
+.recording__download:hover {
+  text-decoration: underline;
+}
+.entry__audio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--latin);
+  font-weight: 500;
+}
+
 /* ── Responsive ───────────────────────────────────────────────────────── */
 
 /* Small laptops / large tablets */
