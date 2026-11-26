@@ -275,7 +275,7 @@ export default function DictatePage() {
                     <ScriptText text={EXAMPLE} />
                   </p>
                   <p className="sheet__hint">
-                    Your words appear here as you speak.. Hindi is underlined in violet, English in Teal.
+                    Your words appear here as you speak. Hindi is underlined in violet, English in Teal.
                   </p>
                 </div>
               )}
