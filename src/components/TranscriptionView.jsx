@@ -1,4 +1,5 @@
 import { Copy, Download, Pencil } from 'lucide-react';
+import AudioPlayer from './AudioPlayer.jsx';
 import Modal from './Modal.jsx';
 import MixBar from './MixBar.jsx';
 import ScriptText from './ScriptText.jsx';
@@ -75,6 +76,7 @@ export default function TranscriptionView({ item, onClose, onEdit }) {
           </dd>
         </div>
       </dl>
+      {item.audio && <AudioPlayer id={item.id} audio={item.audio} />}
       <MixBar text={item.content} showLegend />
       <p className="transcript transcript--reading">
         <ScriptText text={item.content} />

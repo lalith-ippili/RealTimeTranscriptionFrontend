@@ -8,6 +8,8 @@
 //    only delivers silence (muted / wrong device), via `onIssue`.
 //  • Open the console and filter by "[Bolo · Mic]" to see the device and state.
 
+import { connectToCapture } from './audioCapture.js';
+
 export const TARGET_SAMPLE_RATE = 16000;
 
 const WORKLET_URL = `${import.meta.env.BASE_URL}worklets/pcm-recorder.js`;
@@ -189,6 +191,9 @@ export async function openMicrophone({ onChunk, onLevel, onIssue, deviceId } = {
   recorder.connect(mute);
   mute.connect(context.destination);
 
+  // Also record the audio itself, so it can be saved to history with the text.
+  const stopCapture = connectToCapture(context, source);
+
   let stopped = false;
   return {
     sampleRate: TARGET_SAMPLE_RATE,
@@ -197,6 +202,7 @@ export async function openMicrophone({ onChunk, onLevel, onIssue, deviceId } = {
       if (stopped) return;
       stopped = true;
       clearInterval(watchdog);
+      stopCapture();
       recorder.port.onmessage = null;
       if (track) track.onended = null;
       try {

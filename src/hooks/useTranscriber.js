@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadEngineFactory } from '../engines/index.js';
 import { applyText } from '../lib/transcriptText.js';
+import { discardAudioCapture, snapshotAudioCapture } from '../lib/audioCapture.js';
 
 /**
  * Drives one speech-to-text engine and keeps the running transcript.
@@ -182,6 +183,7 @@ export function useTranscriber() {
 
   const reset = useCallback(() => {
     if (engineRef.current) return;
+    discardAudioCapture(); // the recording belongs to the transcript being cleared
     setTranscript('');
     setInterim('');
     setError(null);
@@ -196,6 +198,7 @@ export function useTranscriber() {
   useEffect(
     () => () => {
       engineRef.current?.stop().catch(() => {});
+      discardAudioCapture();
     },
     [],
   );
@@ -217,6 +220,7 @@ export function useTranscriber() {
       progress,
       timing,
       getElapsedMs,
+      getRecording: snapshotAudioCapture,
       subscribeLevel,
       enginesUsed,
       lastMeta,

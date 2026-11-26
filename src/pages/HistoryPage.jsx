@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, CircleAlert, LoaderCircle, Pencil, Plus, RefreshCw, Search, Star, Trash2 } from 'lucide-react';
+import { AudioLines, ChevronLeft, ChevronRight, CircleAlert, LoaderCircle, Pencil, Plus, RefreshCw, Search, Star, Trash2 } from 'lucide-react';
 import api from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
@@ -262,10 +262,10 @@ export default function HistoryPage() {
       ) : isEmptyLibrary ? (
         <div className="empty">
           <h2>Nothing saved yet</h2>
-          <p>Dictate something and press Save to keep it here, or type one in by hand.</p>
+          <p>Dictate something and press Save to keep it here, or type one in by hand</p>
           <div className="empty__actions">
             <Link to="/" className="btn btn--primary">
-              Start dictating
+              Start dictating!
             </Link>
             <button type="button" className="btn btn--ghost" onClick={() => setForm({ item: null })}>
               Type one in
@@ -337,6 +337,11 @@ export default function HistoryPage() {
                     {item.wordCount} words{item.durationMs ? `, ${formatDuration(item.durationMs)}` : ''}
                   </span>
                   <time dateTime={item.createdAt}>{formatDate(item.createdAt)}</time>
+                  {item.audio && (
+                    <span className="entry__audio">
+                      <AudioLines size={14} aria-hidden="true" /> Recording
+                    </span>
+                  )}
                 </div>
                 <div className="entry__actions">
                   <SpeakButton id={item.id} text={item.content} />

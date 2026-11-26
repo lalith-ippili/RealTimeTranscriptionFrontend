@@ -25,6 +25,9 @@ import VoicePicker from '../components/VoicePicker.jsx';
 import { countWords } from '../lib/script.js';
 import { MIC_ISSUES, primeAudio } from '../lib/microphone.js';
 
+// Matches the server's default AUDIO_MAX_MB.
+const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+
 const EXAMPLE = 'कल की meeting को चार बजे reschedule कर दो, और client को email भेज देना।';
 
 const readPref = (key, fallback) => {
@@ -64,7 +67,7 @@ export default function DictatePage() {
   const [title, setTitle] = useState('');
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(null); // { id, content, title }
+  const [saved, setSaved] = useState(null); // { id, content, title, audioSize }
 
   // Engines that cannot run here, with the reason shown in the picker.
   const unavailable = useMemo(() => {
@@ -134,12 +137,35 @@ export default function DictatePage() {
         ? await api.updateTranscription(saved.id, { ...payload, title: title.trim() })
         : await api.createTranscription(payload);
       const savedTitle = title.trim() ? title : record.title;
+
+      // Save the audio recording with it (only when there is new audio since the last save).
+      let audioSize = saved?.audioSize || 0;
+      let audioProblem = '';
+      const recording = await stt.getRecording();
+      if (recording && recording.blob.size !== audioSize) {
+        if (recording.blob.size > MAX_AUDIO_BYTES) {
+          audioProblem = 'the recording is larger than 20 MB';
+        } else {
+          try {
+            await api.uploadAudio(record.id, recording.blob, { durationMs: recording.durationMs });
+            audioSize = recording.blob.size;
+          } catch (err) {
+            audioProblem = err.message;
+          }
+        }
+      }
+
       setTitle(savedTitle);
-      setSaved({ id: record.id, content: stt.transcript, title: savedTitle });
-      toast.show(saved ? 'Changes saved' : 'Saved to history', {
-        tone: 'success',
-        action: { label: 'Open history', onClick: () => navigate('/history') },
-      });
+      setSaved({ id: record.id, content: stt.transcript, title: savedTitle, audioSize });
+      if (audioProblem) {
+        toast.show(`Text saved, but the audio wasn't: ${audioProblem}`, { tone: 'error', duration: 8000 });
+      } else {
+        const withAudio = audioSize ? ' with the audio recording' : '';
+        toast.show(saved ? `Changes saved${withAudio}` : `Saved to history${withAudio}`, {
+          tone: 'success',
+          action: { label: 'Open history', onClick: () => navigate('/history') },
+        });
+      }
     } catch (err) {
       toast.show(err.message, { tone: 'error', duration: 7000 });
     } finally {
@@ -174,7 +200,7 @@ export default function DictatePage() {
       <section className="dictate__main" aria-labelledby="dictate-title">
         <header className="page-head">
           <h1 id="dictate-title" className="page-title">
-            Speak Hindi, English, or both.
+            Speak Hindi, English, or Any
           </h1>
           <p className="page-lede">Words appear on the pad as you talk. Save them, edit them, or listen back.</p>
           <div className="lang">
@@ -249,7 +275,7 @@ export default function DictatePage() {
                     <ScriptText text={EXAMPLE} />
                   </p>
                   <p className="sheet__hint">
-                    Your words appear here as you speak. Hindi is underlined in violet, English in teal.
+                    Your words appear here as you speak. Hindi is underlined in violet, English in Teal.
                   </p>
                 </div>
               )}
