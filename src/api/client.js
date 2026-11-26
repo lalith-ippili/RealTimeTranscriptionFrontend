@@ -96,6 +96,35 @@ async function request(path, options = {}) {
   }
 }
 
+/** Address of a transcription's recording (for <audio src> and download links). */
+export const audioUrl = (id, { download = false } = {}) =>
+  `${API_URL}/api/transcriptions/${id}/audio${download ? '?download=1' : ''}`;
+
+/** Upload (or replace) the recording of a transcription. The body is the audio file itself. */
+async function uploadAudio(id, blob, { durationMs = 0 } = {}) {
+  const url = `${API_URL}/api/transcriptions/${id}/audio?durationMs=${Math.max(0, Math.round(durationMs))}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120_000);
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': blob.type || 'audio/webm' },
+      body: blob,
+      signal: controller.signal,
+    });
+  } catch {
+    throw new ApiError("Couldn't upload the recording. Check your connection and try again.", 0);
+  } finally {
+    clearTimeout(timer);
+  }
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new ApiError(data?.error?.message || `Uploading the recording failed (${response.status})`, response.status);
+  }
+  return data;
+}
+
 export const api = {
   // /health answers 503 (with the same body) when the database is down.
   health: (opts = {}) =>
@@ -114,6 +143,9 @@ export const api = {
   updateTranscription: (id, body) => request(`/transcriptions/${id}`, { method: 'PATCH', body }),
   deleteTranscription: (id) => request(`/transcriptions/${id}`, { method: 'DELETE' }),
   deleteTranscriptions: (ids) => request('/transcriptions', { method: 'DELETE', body: { ids } }),
+
+  uploadAudio,
+  deleteAudio: (id) => request(`/transcriptions/${id}/audio`, { method: 'DELETE' }),
 };
 
 export default api;
