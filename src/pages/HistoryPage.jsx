@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, CircleAlert, LoaderCircle, Pencil, Plus, RefreshCw, Search, Star, Trash2 } from 'lucide-react';
+import { AudioLines, ChevronLeft, ChevronRight, CircleAlert, LoaderCircle, Pencil, Plus, RefreshCw, Search, Star, Trash2 } from 'lucide-react';
 import api from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
@@ -337,6 +337,11 @@ export default function HistoryPage() {
                     {item.wordCount} words{item.durationMs ? `, ${formatDuration(item.durationMs)}` : ''}
                   </span>
                   <time dateTime={item.createdAt}>{formatDate(item.createdAt)}</time>
+                  {item.audio && (
+                    <span className="entry__audio">
+                      <AudioLines size={14} aria-hidden="true" /> Recording
+                    </span>
+                  )}
                 </div>
                 <div className="entry__actions">
                   <SpeakButton id={item.id} text={item.content} />
